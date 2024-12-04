@@ -14,7 +14,6 @@ class basic_centrality_selection:
 
     Attributes:
         graph (nx.Graph): The network graph
-        num_landmarks (int): Number of landmarks to select
         num_seeds (int): Number of random seeds for approximation
         random_seed (int): Random seed for reproducibility
         landmarks (List[str]): Selected landmark nodes
@@ -23,24 +22,24 @@ class basic_centrality_selection:
 
     def __init__(
             self,
-            num_landmarks: int,
+            gexf_path: str,
             num_seeds: int = 100,
-            random_seed: Optional[int] = None
+            random_seed: Optional[int] = 42
     ):
         """
         Initialize the ApproxClosenessSelection.
 
         Parameters:
-            num_landmarks (int): Number of landmarks to select
             num_seeds (int): Number of random seeds for approximation
             random_seed (Optional[int]): Random seed for reproducibility
         """
         self.graph = None
-        self.num_landmarks = num_landmarks
+        self.num_landmarks = None
         self.num_seeds = num_seeds
         self.random_seed = random_seed
         self.landmarks = None
         self.centrality_scores = None
+        self.load_network(gexf_path)
 
         if random_seed is not None:
             random.seed(random_seed)
@@ -131,7 +130,7 @@ class basic_centrality_selection:
 
         return self.centrality_scores
 
-    def select_landmarks(self) -> List[str]:
+    def select_landmarks(self, num) -> List[str]:
         """
         Select landmarks based on approximate closeness centrality.
         Selects nodes with lowest centrality scores as landmarks.
@@ -139,6 +138,7 @@ class basic_centrality_selection:
         Returns:
             List[str]: List of selected landmark nodes
         """
+        self.num_landmarks = num
         if self.centrality_scores is None:
             self.compute_approximate_closeness()
 
@@ -153,93 +153,45 @@ class basic_centrality_selection:
 
         return self.landmarks
 
-    def analyze_coverage(self) -> dict:
-        """
-        Analyze the coverage properties of selected landmarks.
-
-        Returns:
-            dict: Dictionary containing coverage statistics
-        """
-        if self.landmarks is None:
-            raise RuntimeError("No landmarks selected. Call select_landmarks() first.")
-
-        # Compute average distance from landmarks to all other nodes
-        total_distances = defaultdict(int)
-        reachable_count = defaultdict(int)
-
-        for landmark in self.landmarks:
-            distances = self._bfs_distances(landmark)
-            for node, dist in distances.items():
-                total_distances[node] += dist
-                reachable_count[node] += 1
-
-        # Calculate coverage metrics
-        n_nodes = self.graph.number_of_nodes()
-        covered_nodes = sum(1 for count in reachable_count.values() if count > 0)
-        avg_distance = np.mean([
-            total_distances[node] / reachable_count[node]
-            for node in total_distances
-            if reachable_count[node] > 0
-        ])
-
-        coverage_stats = {
-            'num_landmarks': len(self.landmarks),
-            'coverage_ratio': covered_nodes / n_nodes,
-            'average_distance': avg_distance,
-            'landmark_centralities': {
-                node: self.centrality_scores[node]
-                for node in self.landmarks
-            }
-        }
-
-        return coverage_stats
-
-    def save_results(self, output_file: str, coverage_stats: dict) -> None:
-        """
-        Save landmarks and their statistics to a file.
-
-        Parameters:
-            output_file (str): Path to save the results
-            coverage_stats (dict): Coverage statistics dictionary
-        """
-        with open(output_file, 'w') as f:
-            f.write("Selected Landmarks:\n")
-            for i, landmark in enumerate(self.landmarks, 1):
-                centrality = self.centrality_scores[landmark]
-                f.write(f"{i}. Node {landmark} "
-                        f"(approx. closeness centrality: {centrality:.6f})\n")
-
-            f.write("\nCoverage Statistics:\n")
-            for metric, value in coverage_stats.items():
-                if metric != 'landmark_centralities':
-                    f.write(f"{metric}: {value:.6f}\n" if isinstance(value, float)
-                            else f"{metric}: {value}\n")
+    # def analyze_coverage(self) -> dict:
+    #     """
+    #     Analyze the coverage properties of selected landmarks.
+    #
+    #     Returns:
+    #         dict: Dictionary containing coverage statistics
+    #     """
+    #     if self.landmarks is None:
+    #         raise RuntimeError("No landmarks selected. Call select_landmarks() first.")
+    #
+    #     # Compute average distance from landmarks to all other nodes
+    #     total_distances = defaultdict(int)
+    #     reachable_count = defaultdict(int)
+    #
+    #     for landmark in self.landmarks:
+    #         distances = self._bfs_distances(landmark)
+    #         for node, dist in distances.items():
+    #             total_distances[node] += dist
+    #             reachable_count[node] += 1
+    #
+    #     # Calculate coverage metrics
+    #     n_nodes = self.graph.number_of_nodes()
+    #     covered_nodes = sum(1 for count in reachable_count.values() if count > 0)
+    #     avg_distance = np.mean([
+    #         total_distances[node] / reachable_count[node]
+    #         for node in total_distances
+    #         if reachable_count[node] > 0
+    #     ])
+    #
+    #     coverage_stats = {
+    #         'num_landmarks': len(self.landmarks),
+    #         'coverage_ratio': covered_nodes / n_nodes,
+    #         'average_distance': avg_distance,
+    #         'landmark_centralities': {
+    #             node: self.centrality_scores[node]
+    #             for node in self.landmarks
+    #         }
+    #     }
+    #
+    #     return coverage_stats
 
 
-# Example usage
-if __name__ == "__main__":
-    try:
-        # Initialize selector
-        selector = basic_centrality_selection(
-            num_landmarks=5,
-            num_seeds=100,
-            random_seed=42
-        )
-
-        # Load network and select landmarks
-        selector.load_network("../data to graph/reddit_body.gexf")
-        landmarks = selector.select_landmarks()
-
-        # Analyze coverage
-        stats = selector.analyze_coverage()
-
-        # Save results
-        # selector.save_results("landmarks_closeness.txt", stats)
-
-        # Print summary
-        print(f"\nSelected {len(landmarks)} landmarks")
-        print(f"Coverage ratio: {stats['coverage_ratio']:.2%}")
-        print(f"Average distance: {stats['average_distance']:.2f}")
-
-    except Exception as e:
-        print(f"Error: {str(e)}")
