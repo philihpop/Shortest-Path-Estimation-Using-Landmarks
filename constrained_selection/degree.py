@@ -1,7 +1,7 @@
 import networkx as nx
 from typing import List, Set
 from pathlib import Path
-
+from tqdm import tqdm
 
 class constrained_degree_selection:
     """
@@ -57,12 +57,21 @@ class constrained_degree_selection:
         if not self.G:
             raise ValueError("No network loaded. Call load_network() first.")
 
+        print("Sorting nodes by degree...")
+        nodes = list(self.G.nodes())
+        degrees = {}
+        for node in tqdm(nodes):
+            degrees[node] = self.G.degree(node)
         # Get initial degree-based ranking
         degree_ranking = sorted(self.G.degree(), key=lambda x: x[1], reverse=True)
+        print("Sorting nodes by degree...")
         ranked_nodes = [node for node, _ in degree_ranking]
 
         self.landmarks = []
         available_nodes = set(self.G.nodes())
+
+        print(f"Selecting {num_landmarks} landmarks...")
+        pbar = tqdm(total=num_landmarks)
 
         while len(self.landmarks) < num_landmarks and available_nodes:
             # Select highest-degree available node as new landmark
@@ -73,8 +82,8 @@ class constrained_degree_selection:
             else:
                 # No more available nodes
                 break
-
             self.landmarks.append(landmark)
+            pbar.update(1)
 
             # Find and remove all nodes within distance h from the landmark
             to_remove = set()
@@ -86,7 +95,8 @@ class constrained_degree_selection:
 
             # Remove nodes from consideration
             available_nodes -= to_remove
-
+            pbar.set_postfix({'removed_nodes': len(to_remove)})
+        pbar.close()
         return self.landmarks
 
     def save_landmarks(self, output_path: str) -> None:

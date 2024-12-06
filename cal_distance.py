@@ -97,14 +97,15 @@ class path_calculator:
         except Exception as e:
             print(f"Error saving distances: {e}")
             return False
-
     def load_distances(self, graph, distance_file_path) -> bool:
-        """
-        Load precomputed distances and landmarks from file
-        Returns True if successful, False otherwise
-        """
         try:
             self.graph = graph
+            self.nodes = list(self.graph.nodes())
+
+            if not os.path.exists(distance_file_path):
+                print(f"Error loading distances: File not found - {distance_file_path}")
+                return False
+
             with open(distance_file_path, 'r') as f:
                 data = json.load(f)
 
@@ -112,26 +113,56 @@ class path_calculator:
             if 'landmarks' not in data or 'distances' not in data:
                 return False
 
-            # Convert string keys back to integers
+            # Keep landmarks as strings
             self.landmarks = data['landmarks']
             self.distances_to_landmarks = {}
-            for landmark_str, distances in data['distances'].items():
-                landmark = int(landmark_str)
-                self.distances_to_landmarks[landmark] = {
-                    int(node): dist for node, dist in distances.items()
-                }
+            for landmark, distances in data['distances'].items():
+                self.distances_to_landmarks[landmark] = distances
 
             # Verify all nodes are present
+            node_set = set(self.nodes)
             for distances in self.distances_to_landmarks.values():
-                if set(map(int, distances.keys())) != set(self.nodes):
+                if set(distances.keys()) != node_set:
                     return False
 
             return True
         except Exception as e:
-            print(f"Error loading distances: {e}")
+            print(f"Error loading distances: {str(e)}")
             return False
+    # def load_distances(self, graph, distance_file_path) -> bool:
+    #     """
+    #     Load precomputed distances and landmarks from file
+    #     Returns True if successful, False otherwise
+    #     """
+    #     try:
+    #         self.graph = graph
+    #         with open(distance_file_path, 'r') as f:
+    #             data = json.load(f)
 
-    def _estimate_distance(self, source: int, target: int) -> float:
+    #         # Verify data structure
+    #         if 'landmarks' not in data or 'distances' not in data:
+    #             return False
+
+    #         # Convert string keys back to integers
+    #         self.landmarks = data['landmarks']
+    #         self.distances_to_landmarks = {}
+    #         for landmark_str, distances in data['distances'].items():
+    #             landmark = int(landmark_str)
+    #             self.distances_to_landmarks[landmark] = {
+    #                 int(node): dist for node, dist in distances.items()
+    #             }
+
+    #         # Verify all nodes are present
+    #         for distances in self.distances_to_landmarks.values():
+    #             if set(map(int, distances.keys())) != set(self.nodes):
+    #                 return False
+
+    #         return True
+    #     except Exception as e:
+    #         print(f"Error loading distances: {e}")
+    #         return False
+
+    def _estimate_distance(self, source: str, target: str) -> float:
         """
         Estimate distance between two nodes using landmarks
         Using triangle inequality: d(source, target) <= d(source, landmark) + d(landmark, target)
@@ -142,20 +173,52 @@ class path_calculator:
 
         estimated = float('inf')
         for landmark in self.landmarks:
-            dist_via_landmark = (
-                    self.distances_to_landmarks[landmark][source] +
-                    self.distances_to_landmarks[landmark][target]
-            )
+            # Get distances, handling possible infinity values
+            d_source = self.distances_to_landmarks[landmark].get(source, float('inf'))
+            d_target = self.distances_to_landmarks[landmark].get(target, float('inf'))
+            
+            # Skip if either distance is infinity
+            if d_source == float('inf') or d_target == float('inf'):
+                continue
+                
+            dist_via_landmark = d_source + d_target
             estimated = min(estimated, dist_via_landmark)
 
         return estimated
 
-    def _compute_actual_distance(self, source: int, target: int) -> float:
+    # def _estimate_distance(self, source: int, target: int) -> float:
+    #     """
+    #     Estimate distance between two nodes using landmarks
+    #     Using triangle inequality: d(source, target) <= d(source, landmark) + d(landmark, target)
+    #     Returns the minimum upper bound among all landmarks
+    #     """
+    #     if source == target:
+    #         return 0
+
+    #     estimated = float('inf')
+    #     for landmark in self.landmarks:
+    #         dist_via_landmark = (
+    #                 self.distances_to_landmarks[landmark][source] +
+    #                 self.distances_to_landmarks[landmark][target]
+    #         )
+    #         estimated = min(estimated, dist_via_landmark)
+
+    #     return estimated
+
+    def _compute_actual_distance(self, source: str, target: str) -> float:
         """Compute actual shortest distance between two nodes"""
         if (source, target) not in self.actual_distances:
             distances = self._dijkstra(source)
-            self.actual_distances[(source, target)] = distances[target]
+            # Handle unreachable nodes
+            self.actual_distances[(source, target)] = distances.get(target, float('inf'))
         return self.actual_distances[(source, target)]
+
+    # def _compute_actual_distance(self, source: int, target: int) -> float:
+    #     """Compute actual shortest distance between two nodes"""
+    #     if (source, target) not in self.actual_distances:
+    #         distances = self._dijkstra(source)
+    #         self.actual_distances[(source, target)] = distances[target]
+    #     return self.actual_distances[(source, target)]
 
     def compute_error(self, nodes_list) -> float:
         """
@@ -167,45 +230,100 @@ class path_calculator:
         for pair in nodes_list:
             source = pair[0]
             target = pair[1]
-            if source == target:
+            
+            try:
+                if source == target:
+                    continue
+
+                actual = self._compute_actual_distance(source, target)
+                estimated = self._estimate_distance(source, target)
+
+                # Skip pairs where either distance is infinity
+                if actual == float('inf') or estimated == float('inf'):
+                    continue
+                    
+                # Skip if actual distance is 0
+                if actual == 0:
+                    continue
+
+                error = abs(actual - estimated) / actual
+                total_error += error
+                count += 1
+                
+            except Exception as e:
+                print(f"Error computing pair {source}-{target}: {str(e)}")
                 continue
 
-            actual = self._compute_actual_distance(source, target)
-            estimated = self._estimate_distance(source, target)
+        if count == 0:
+            print("Warning: No valid pairs found for error computation")
+            return float('nan')
 
-            if actual == 0:
-                if estimated != 0:
-                    total_error += float('inf')
-                continue
-            error = abs(actual - estimated) / actual
-            total_error += error
-            count += 1
+        return total_error / count
 
-        mean_error = total_error / count
-        return mean_error
+    # def compute_error(self, nodes_list) -> float:
+    #     """
+    #     Compute mean error between estimated and actual distance
+    #     Error = |actual - estimated| / actual
+    #     """
+    #     total_error = 0
+    #     count = 0
+    #     for pair in nodes_list:
+    #         source = pair[0]
+    #         target = pair[1]
+    #         if source == target:
+    #             continue
+
+    #         actual = self._compute_actual_distance(source, target)
+    #         estimated = self._estimate_distance(source, target)
+
+    #         if actual == 0:
+    #             if estimated != 0:
+    #                 total_error += float('inf')
+    #             continue
+    #         error = abs(actual - estimated) / actual
+    #         total_error += error
+    #         count += 1
+
+    #     mean_error = total_error / count
+    #     return mean_error
 
 
 if __name__ == "__main__":
     NUM_LANDMARK = 20
-    networks = ["reddit_body", "reddit_title"]
+    networks = ["reddit_body", "reddit_title", "wiki", "twitch"]
     selections = {
         # 'basic_selection': {'centrality': "basic_centrality_selection", 'degree': "basic_degree_selection"},
         # 'constrained_selection': {'centrality': "constrained_centrality_selection",
         #                           'degree': "constrained_degree_selection"},
         'partitioning_selection': {'centrality': "partitioning_centrality_selection",
-                                   'degree': "partitioning_degree_selection"}
+                                  'degree': "partitioning_degree_selection"}
     }
+    if 'centrality' in sys.modules:
+        del sys.modules['centrality']
+    if 'degree' in sys.modules:
+        del sys.modules['degree']
+
     cal_path = path_calculator()
     for name, selection_dic in selections.items():
         module_dir = os.path.join(os.path.dirname(__file__), name)
-        sys.path.append(module_dir)
+        print(f"Loading from directory: {module_dir}")  # Debug print
+        
+        if module_dir not in sys.path:
+            sys.path.insert(0, module_dir)  # Insert at beginning of path
+
         for module_name, selection in selection_dic.items():
             for network in networks:
-                module = importlib.import_module(module_name)
-                print(module_name)
-                selector_class = getattr(module, selection)
-                in_file_path = "data to graph/" + network + ".gexf"
-                out_file_path = name + "/pre_compute distance/" + selection + "_" + network + ".json"
-                selector = selector_class(gexf_path=in_file_path)
-                landmark_list = selector.select_landmarks(NUM_LANDMARK)
-                cal_path.get_data(in_file_path, landmark_list, out_file_path)
+                try:
+                    print(f"Importing {module_name} from {module_dir}")  # Debug print
+                    module = importlib.import_module(module_name)
+                    print(f"Available in module: {dir(module)}")  # Debug print
+                    selector_class = getattr(module, selection)
+                    in_file_path = "data to graph/" + network + ".gexf"
+                    out_file_path = name + "/pre_compute distance/" + selection + "_" + network + ".json"
+                    selector = selector_class(gexf_path=in_file_path)
+                    landmark_list = selector.select_landmarks(NUM_LANDMARK)
+                    cal_path.get_data(in_file_path, landmark_list, out_file_path)
+                except Exception as e:
+                    print(f"Error processing {network} with {module_name}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()  # Print full error trace

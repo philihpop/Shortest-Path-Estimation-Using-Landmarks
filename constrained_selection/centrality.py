@@ -1,7 +1,8 @@
 import networkx as nx
 from typing import List, Set
 from pathlib import Path
-
+from tqdm import tqdm
+import random
 
 class constrained_centrality_selection:
     """
@@ -58,16 +59,44 @@ class constrained_centrality_selection:
         """
         if not self.G:
             raise ValueError("No network loaded. Call load_network() first.")
+        
+        print("Computing approximate closeness centrality...")
 
+        num_samples = min(100, len(self.G.nodes()))  # Use 100 random nodes or less if graph is smaller
+        sample_nodes = random.sample(list(self.G.nodes()), num_samples)
+        closeness_centrality = {node: 0.0 for node in self.G.nodes()}
+        with tqdm(total=num_samples, desc="Calculating approximate centrality") as pbar:
+            for source in sample_nodes:
+                distances = nx.single_source_shortest_path_length(self.G, source)
+                for node in distances:
+                    if distances[node] > 0:  # Avoid division by zero
+                        closeness_centrality[node] += 1.0 / distances[node]
+                pbar.update(1)
+    
+        # Normalize scores
+        max_score = max(closeness_centrality.values())
+        if max_score > 0:  # Avoid division by zero
+            closeness_centrality = {
+                node: score/max_score 
+                for node, score in closeness_centrality.items()
+        }
         # Calculate closeness centrality for all nodes
-        closeness_centrality = nx.closeness_centrality(self.G)
-
+        # print("Computing closeness centrality...")
+        # with tqdm(total=len(self.G.nodes()), desc="Calculating centrality") as pbar:
+        #     closeness_centrality = {}
+        #     for node in self.G.nodes():
+        #         closeness_centrality[node] = nx.closeness_centrality(self.G, node)
+        #         pbar.update(1)
+        print("Sorting nodes by centrality...")
         # Sort nodes by closeness centrality (ascending order - lower values first)
         ranked_nodes = sorted(closeness_centrality.keys(),
                               key=lambda k: closeness_centrality[k])
 
         self.landmarks = []
         available_nodes = set(self.G.nodes())
+
+        print(f"Selecting {num_landmarks} landmarks...")
+        pbar = tqdm(total=num_landmarks)
 
         while len(self.landmarks) < num_landmarks and available_nodes:
             # Select node with lowest closeness centrality from available nodes
@@ -80,6 +109,7 @@ class constrained_centrality_selection:
                 break
 
             self.landmarks.append(landmark)
+            pbar.update(1)
 
             # Find and remove all nodes within distance h from the landmark
             to_remove = set()
@@ -95,7 +125,8 @@ class constrained_centrality_selection:
             # Print information about selected landmark
             print(f"Selected landmark {landmark} with closeness centrality: {closeness_centrality[landmark]:.4f}")
             print(f"Removed {len(to_remove)} nodes within distance {h}")
-
+        
+        pbar.close()
         return self.landmarks
 
     def save_landmarks(self, output_path: str) -> None:

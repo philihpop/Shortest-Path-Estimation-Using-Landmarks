@@ -2,7 +2,7 @@ import networkx as nx
 from typing import List, Union, Optional
 import numpy as np
 import os
-
+from tqdm import tqdm
 
 class basic_degree_selection:
     """
@@ -78,13 +78,17 @@ class basic_degree_selection:
                 f"Number of requested landmarks ({self.num_landmarks}) exceeds "
                 f"number of nodes in graph ({self.graph.number_of_nodes()})"
             )
+        print("Computing node degrees...")
+        # Calculate node degrees with progress bar
+        nodes = list(self.graph.nodes())
+        degrees = {}
+        for node in tqdm(nodes):
+            if self.weighted and nx.is_weighted(self.graph, weight=self.weight_attr):
+                degrees[node] = self.graph.degree(node, weight=self.weight_attr)
+            else:
+                degrees[node] = self.graph.degree(node)
 
-        # Calculate node degrees
-        if self.weighted and nx.is_weighted(self.graph, weight=self.weight_attr):
-            degrees = dict(nx.degree(self.graph, weight=self.weight_attr))
-        else:
-            degrees = dict(nx.degree(self.graph))
-
+        print("Sorting nodes by degree...")
         # Sort nodes by degree in descending order
         sorted_nodes = sorted(
             degrees.items(),
@@ -94,8 +98,26 @@ class basic_degree_selection:
 
         # Select top D nodes as landmarks
         self.landmarks = [node for node, degree in sorted_nodes[:self.num_landmarks]]
+        print(f"Selected {len(self.landmarks)} landmarks based on degree centrality")
 
         return self.landmarks
+        # Calculate node degrees
+        # if self.weighted and nx.is_weighted(self.graph, weight=self.weight_attr):
+        #     degrees = dict(nx.degree(self.graph, weight=self.weight_attr))
+        # else:
+        #     degrees = dict(nx.degree(self.graph))
+
+        # # Sort nodes by degree in descending order
+        # sorted_nodes = sorted(
+        #     degrees.items(),
+        #     key=lambda x: x[1],
+        #     reverse=True
+        # )
+
+        # # Select top D nodes as landmarks
+        # self.landmarks = [node for node, degree in sorted_nodes[:self.num_landmarks]]
+
+        # return self.landmarks
 
     # def analyze_coverage(self) -> dict:
     #     """
